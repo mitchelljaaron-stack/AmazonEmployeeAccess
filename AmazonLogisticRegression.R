@@ -48,7 +48,11 @@ amazon_predictions <- predict(logReg_wf,
 
 final_predictions <- amazon_predictions %>%
   rename(Action = .pred_class) %>%
-  bind_cols(test_data %>% select(id))
+  bind_cols(test_data %>% select(id)) %>%
+  mutate(Action = as.numeric(as.character(Action))) %>%
+  mutate(Action = replace_na(Action, 0)) %>%
+  select(id, Action)
+
 
 # Export processed dataset
 vroom_write(x = final_predictions, file = "./amazon_logReg.csv", delim = ",")
