@@ -1,4 +1,6 @@
-# Logistic Using Random Forests
+# Naiive Bayes Logistic Predictions
+
+library(discrim)
 
 library(glmnet)
 
@@ -31,31 +33,29 @@ train_data <- train_data %>%
 test_data <- test_data %>%
   mutate(across(where(is.numeric), as.factor))
 
-rf_mod <- rand_forest(mtry = tune(),
-                      min_n=tune(),
-                      trees=500) %>%
-set_engine("ranger") %>%
-set_mode("classification")
+## nb model
+nb_model <- naive_Bayes(Laplace=tune(), smoothness=tune()) %>%
+set_mode("classification") %>%
+set_engine("naivebayes")
+
 
 # Create recipe
 my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   # Collapse rare categories (<0.1%)
   step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
   # Target encoding
-  step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_normalize(all_predictors()) %>%
-  step_pca(all_predictors(), threshold=0.9)
+  step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION))
 
 
 
-rf_wf <- workflow() %>%
+nb_wf <- workflow() %>%
   add_recipe(my_recipe) %>%
-  add_model(rf_mod)
+  add_model(nb_model)
 
 ## Grid of values to tune over
 tuning_grid <- grid_regular(
-  mtry(range = c(1, ncol(train_data) - 1)),
-  min_n(),
+  Laplace(range = c(0, 1)),
+  smoothness(range = c(0,1)),
   levels = 3
 )
 
@@ -63,7 +63,7 @@ tuning_grid <- grid_regular(
 folds <- vfold_cv(train_data, v = 3, repeats=1)
 
 ## Run the CV
-CV_results <- rf_wf %>%
+CV_results <- nb_wf %>%
   tune_grid(resamples=folds,
             grid=tuning_grid,
             metrics = metric_set(roc_auc, accuracy))
@@ -74,7 +74,7 @@ bestTune <- CV_results %>%
 
 ## Finalize the Workflow & fit it
 final_wf <-
-  rf_wf %>%
+  nb_wf %>%
   finalize_workflow(bestTune) %>%
   fit(data=train_data)
 
@@ -86,4 +86,4 @@ final_predictions <- final_wf %>%
   select(id, Action)
 
 # Export processed dataset
-vroom_write(x = final_predictions, file = "./amazon_rf_pca.csv", delim = ",")
+vroom_write(x = final_predictions, file = "./amazon_nb.csv", delim = ",")

@@ -1,4 +1,4 @@
-# Logistic Using Random Forests
+# Support Vector Machines Amazon Dataset Analysis
 
 library(glmnet)
 
@@ -31,39 +31,39 @@ train_data <- train_data %>%
 test_data <- test_data %>%
   mutate(across(where(is.numeric), as.factor))
 
-rf_mod <- rand_forest(mtry = tune(),
-                      min_n=tune(),
-                      trees=500) %>%
-set_engine("ranger") %>%
-set_mode("classification")
-
 # Create recipe
 my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   # Collapse rare categories (<0.1%)
   step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
   # Target encoding
-  step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_normalize(all_predictors()) %>%
-  step_pca(all_predictors(), threshold=0.9)
+  step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION))
 
+## SVM models3
+svmPoly <- svm_poly(degree=tune(), cost=tune()) %>% # set or tune
+  set_mode("classification") %>%
+set_engine("kernlab")
 
+svmRadial <- svm_rbf(rbf_sigma=tune(), cost=tune()) %>% # set or tune
+  set_mode("classification") %>%
+set_engine("kernlab")
 
-rf_wf <- workflow() %>%
+svmLinear <- svm_linear(cost=tune()) %>% # set or tune
+  set_mode("classification") %>%
+set_engine("kernlab")
+
+svm_wf <- workflow() %>%
   add_recipe(my_recipe) %>%
-  add_model(rf_mod)
+  add_model(svmPoly)
 
 ## Grid of values to tune over
-tuning_grid <- grid_regular(
-  mtry(range = c(1, ncol(train_data) - 1)),
-  min_n(),
-  levels = 3
-)
+tuning_grid <- grid_regular(cost(),
+                            levels = 3) ## L^2 total tuning possibilities
 
 ## Split data for CV
 folds <- vfold_cv(train_data, v = 3, repeats=1)
 
 ## Run the CV
-CV_results <- rf_wf %>%
+CV_results <- logReg_wf %>%
   tune_grid(resamples=folds,
             grid=tuning_grid,
             metrics = metric_set(roc_auc, accuracy))
@@ -74,7 +74,7 @@ bestTune <- CV_results %>%
 
 ## Finalize the Workflow & fit it
 final_wf <-
-  rf_wf %>%
+  logReg_wf %>%
   finalize_workflow(bestTune) %>%
   fit(data=train_data)
 
@@ -82,8 +82,8 @@ final_wf <-
 final_predictions <- final_wf %>%
   predict(new_data = test_data, type = "prob") %>%
   bind_cols(test_data %>% select(id)) %>%
-  rename(Action = .pred_1) %>%
+  rename(Action = .pred_1) %>%   # Assuming you want P(ACTION = 1)
   select(id, Action)
 
 # Export processed dataset
-vroom_write(x = final_predictions, file = "./amazon_rf_pca.csv", delim = ",")
+vroom_write(x = final_predictions, file = "./amazon_pen_mix_PCA_logReg.csv", delim = ",")

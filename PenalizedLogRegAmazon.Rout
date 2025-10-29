@@ -1,0 +1,203 @@
+
+R version 4.5.1 (2025-06-13) -- "Great Square Root"
+Copyright (C) 2025 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> # Penalized Logistic Regression Amazon
+> 
+> library(glmnet)
+Loading required package: Matrix
+Loaded glmnet 4.1-10
+> 
+> library(tidyverse)
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.4     ✔ readr     2.1.5
+✔ forcats   1.0.0     ✔ stringr   1.5.1
+✔ ggplot2   3.5.2     ✔ tibble    3.3.0
+✔ lubridate 1.9.4     ✔ tidyr     1.3.1
+✔ purrr     1.1.0     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ tidyr::expand() masks Matrix::expand()
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+✖ tidyr::pack()   masks Matrix::pack()
+✖ tidyr::unpack() masks Matrix::unpack()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+> 
+> library(tidymodels)
+── Attaching packages ────────────────────────────────────── tidymodels 1.4.1 ──
+✔ broom        1.0.10     ✔ rsample      1.3.1 
+✔ dials        1.4.2      ✔ tailor       0.1.0 
+✔ infer        1.0.9      ✔ tune         2.0.0 
+✔ modeldata    1.5.1      ✔ workflows    1.3.0 
+✔ parsnip      1.3.3      ✔ workflowsets 1.1.1 
+✔ recipes      1.3.1      ✔ yardstick    1.3.2 
+── Conflicts ───────────────────────────────────────── tidymodels_conflicts() ──
+✖ scales::discard() masks purrr::discard()
+✖ tidyr::expand()   masks Matrix::expand()
+✖ dplyr::filter()   masks stats::filter()
+✖ recipes::fixed()  masks stringr::fixed()
+✖ dplyr::lag()      masks stats::lag()
+✖ tidyr::pack()     masks Matrix::pack()
+✖ yardstick::spec() masks readr::spec()
+✖ recipes::step()   masks stats::step()
+✖ tidyr::unpack()   masks Matrix::unpack()
+✖ recipes::update() masks Matrix::update(), stats::update()
+> 
+> library(vroom)
+
+Attaching package: ‘vroom’
+
+The following object is masked from ‘package:yardstick’:
+
+    spec
+
+The following object is masked from ‘package:scales’:
+
+    col_factor
+
+The following objects are masked from ‘package:readr’:
+
+    as.col_spec, col_character, col_date, col_datetime, col_double,
+    col_factor, col_guess, col_integer, col_logical, col_number,
+    col_skip, col_time, cols, cols_condense, cols_only, date_names,
+    date_names_lang, date_names_langs, default_locale, fwf_cols,
+    fwf_empty, fwf_positions, fwf_widths, locale, output_column,
+    problems, spec
+
+> 
+> library(patchwork)
+> 
+> library(ggplot2)
+> 
+> library(recipes)
+> 
+> library(embed)
+> 
+> train_data <- vroom("train.csv")
+Rows: 32769 Columns: 10
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+dbl (10): ACTION, RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTN...
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> test_data <- vroom("test.csv")
+Rows: 58921 Columns: 10
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+dbl (10): id, RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTNAME,...
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> # Feature Engineering
+> 
+> train_data <- train_data %>%
++   mutate(
++     ACTION = as.factor(ACTION),
++     across(where(is.numeric) & !all_of("ACTION"), as.factor)
++   )
+> 
+> test_data <- test_data %>%
++   mutate(across(where(is.numeric), as.factor))
+> 
+> # Create recipe
+> my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
++   # Collapse rare categories (<0.1%)
++   step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
++   # Target encoding
++   step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION))
+> 
+> logRegModel <- logistic_reg(
++   penalty = tune(),
++   mixture = tune()
++ ) %>%
++   set_engine("glmnet")
+> 
+> logReg_wf <- workflow() %>%
++   add_recipe(my_recipe) %>%
++   add_model(logRegModel)
+> 
+> ## Grid of values to tune over
+> tuning_grid <- grid_regular(penalty(),
++                             mixture(),
++                             levels = 3) ## L^2 total tuning possibilities
+> 
+> ## Split data for CV
+> folds <- vfold_cv(train_data, v = 3, repeats=1)
+> 
+> ## Run the CV
+> CV_results <- logReg_wf %>%
++ tune_grid(resamples=folds,
++           grid=tuning_grid,
++           metrics = metric_set(roc_auc, accuracy))
+> 
+> ## Find Best Tuning Parameters
+> bestTune <- CV_results %>%
++   select_best(metric = "roc_auc")
+> 
+> ## Finalize the Workflow & fit it
+> final_wf <-
++   logReg_wf %>%
++   finalize_workflow(bestTune) %>%
++   fit(data=train_data)
+> 
+> ## Predict
+> final_predictions <- final_wf %>%
++   predict(new_data = test_data, type = "prob") %>%
++   bind_cols(test_data %>% select(id)) %>%
++   rename(Action = .pred_1) %>%   # Assuming you want P(ACTION = 1)
++   select(id, Action)
+Warning messages:
+1: Novel levels found in column "MGR_ID": "132", "332", "1034", "1257", "1333",
+"1474", "1655", "1713", "1966", "2044", "2189", "2192", "2195", "2197", "2522",
+"2727", "2827", "2872", …, "311730", and "311779".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+2: Novel levels found in column "ROLE_ROLLUP_1": "118376" and "206349".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+3: Novel levels found in column "ROLE_ROLLUP_2": "118127", "118377", "148988",
+"164497", "183381", and "194897".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+4: Novel levels found in column "ROLE_DEPTNAME": "118226", "118774", "119554",
+"120032", "120143", "120166", "120180", "121413", "122114", "122779", "122874",
+"123462", "123541", "123664", "126590", "130297", "132484", "134576", …,
+"156933", and "165393".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+5: Novel levels found in column "ROLE_TITLE": "120202", "121497", "122514",
+"123687", "124560", "130260", "131064", "132500", "134976", "153074", "153082",
+"172579", "176740", "185122", "193024", "203581", "215320", and "240461".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+6: Novel levels found in column "ROLE_FAMILY_DESC": "118067", "118110", "118530",
+"118650", "118812", "118832", "118839", "118939", "119285", "119363", "119530",
+"119588", "119758", "119848", "119940", "119966", "119989", "120005", …,
+"311824", and "311843".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+7: Novel level found in column "ROLE_FAMILY": "125808".
+ℹ The level has been removed, and values have been coerced to <NA>. 
+8: Novel levels found in column "ROLE_CODE": "120204", "121499", "122516",
+"123690", "124562", "127796", "130261", "131066", "132502", "134978", "153076",
+"153084", "172580", "176742", "185124", "193025", "215321", and "240462".
+ℹ The levels have been removed, and values have been coerced to <NA>. 
+> 
+> # Export processed dataset
+> vroom_write(x = final_predictions, file = "./amazon_pen_mix_batch_logReg.csv", delim = ",")
+> 
+> proc.time()
+   user  system elapsed 
+742.668  38.034 120.872 
