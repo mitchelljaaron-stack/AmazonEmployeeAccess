@@ -1,5 +1,7 @@
 # Logistic Using Random Forests
 
+library(themis)
+
 library(glmnet)
 
 library(tidyverse)
@@ -38,13 +40,10 @@ set_engine("ranger") %>%
 set_mode("classification")
 
 # Create recipe
-my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
-  # Collapse rare categories (<0.1%)
-  step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
-  # Target encoding
+my_recipe <- recipe(ACTION ~ ., data = train_data) %>% # Collapse rare categories (<0.1%)
+  step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>% # Target encoding
   step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_normalize(all_predictors()) %>%
-  step_pca(all_predictors(), threshold=0.9)
+  step_smote(all_outcomes(), neighbors=2)
 
 
 
@@ -86,4 +85,4 @@ final_predictions <- final_wf %>%
   select(id, Action)
 
 # Export processed dataset
-vroom_write(x = final_predictions, file = "./amazon_rf_pca.csv", delim = ",")
+vroom_write(x = final_predictions, file = "./amazon_rf_onehot_smote.csv", delim = ",")

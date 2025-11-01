@@ -36,54 +36,43 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   # Collapse rare categories (<0.1%)
   step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
   # Target encoding
-  step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION))
+  step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_mutate_at(all_numeric_predictors(), fn = factor) %>%
+  #Everything numeric for SMOTE so encode it here
+  step_smote(all_outcomes(), neighbors=K) %>%
+  step_upsample()
 
-## SVM models3
-svmPoly <- svm_poly(degree=tune(), cost=tune()) %>% # set or tune
-  set_mode("classification") %>%
-set_engine("kernlab")
+## SVM models
 
-svmRadial <- svm_rbf(rbf_sigma=tune(), cost=tune()) %>% # set or tune
-  set_mode("classification") %>%
-set_engine("kernlab")
 
-svmLinear <- svm_linear(cost=tune()) %>% # set or tune
+svm_rbf <- svm_rbf(rbf_sigma = 0.177, cost = 0.00316) %>%
   set_mode("classification") %>%
-set_engine("kernlab")
+  set_engine("kernlab")
+
+svmPoly <- svm_poly(degree = 1, cost = 0.0131) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab")
+
+svm_linear <- svm_linear(cost = 0.0131) %>%
+  set_mode("classification") %>%
+  set_engine("kernlab")
 
 svm_wf <- workflow() %>%
   add_recipe(my_recipe) %>%
-  add_model(svmPoly)
+  add_model(svm_linear)
 
-## Grid of values to tune over
-tuning_grid <- grid_regular(cost(),
-                            levels = 3) ## L^2 total tuning possibilities
-
-## Split data for CV
-folds <- vfold_cv(train_data, v = 3, repeats=1)
-
-## Run the CV
-CV_results <- logReg_wf %>%
-  tune_grid(resamples=folds,
-            grid=tuning_grid,
-            metrics = metric_set(roc_auc, accuracy))
-
-## Find Best Tuning Parameters
-bestTune <- CV_results %>%
-  select_best(metric = "roc_auc")
 
 ## Finalize the Workflow & fit it
-final_wf <-
-  logReg_wf %>%
-  finalize_workflow(bestTune) %>%
+final_wf <- 
+  svm_wf %>%
   fit(data=train_data)
 
 ## Predict
 final_predictions <- final_wf %>%
   predict(new_data = test_data, type = "prob") %>%
   bind_cols(test_data %>% select(id)) %>%
-  rename(Action = .pred_1) %>%   # Assuming you want P(ACTION = 1)
+  rename(Action = .pred_1) %>%
   select(id, Action)
 
 # Export processed dataset
-vroom_write(x = final_predictions, file = "./amazon_pen_mix_PCA_logReg.csv", delim = ",")
+vroom_write(x = final_predictions, file = "./amazon_svm_linear.csv", delim = ",")

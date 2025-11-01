@@ -1,5 +1,7 @@
 # Penalized Logistic Regression Amazon
 
+library(themis)
+
 library(glmnet)
 
 library(tidyverse)
@@ -37,8 +39,8 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
   # Target encoding
   step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_normalize(all_predictors()) %>%
-  step_pca(all_predictors(), threshold=0.8)
+  step_smote(all_outcomes(), neighbors=2) %>%
+  step_upsample()
 
 logRegModel <- logistic_reg(
   penalty = tune(),
@@ -82,4 +84,4 @@ final_predictions <- final_wf %>%
   select(id, Action)
 
 # Export processed dataset
-vroom_write(x = final_predictions, file = "./amazon_pen_mix_PCA_logReg.csv", delim = ",")
+vroom_write(x = final_predictions, file = "./amazon_pen_mix_smote_logReg.csv", delim = ",")
