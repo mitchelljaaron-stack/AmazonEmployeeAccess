@@ -39,8 +39,7 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_other(all_nominal_predictors(), threshold = 0.001, other = "other") %>%
   # Target encoding
   step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
-  step_smote(all_outcomes(), neighbors=2) %>%
-  step_upsample()
+  step_smote(all_outcomes(), neighbors=2)
 
 logRegModel <- logistic_reg(
   penalty = tune(),

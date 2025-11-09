@@ -39,8 +39,7 @@ my_recipe <- recipe(ACTION ~ ., data = train_data) %>%
   step_lencode_glm(all_nominal_predictors(), outcome = vars(ACTION)) %>%
   step_mutate_at(all_numeric_predictors(), fn = factor) %>%
   #Everything numeric for SMOTE so encode it here
-  step_smote(all_outcomes(), neighbors=K) %>%
-  step_upsample()
+  step_smote(all_outcomes(), neighbors=2)
 
 ## SVM models
 
